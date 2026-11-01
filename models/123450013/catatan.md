@@ -25,6 +25,7 @@ Aturan percobaan: ubah satu hal per percobaan, gunakan 3 seed, catat konfigurasi
 
 ## Catatan eksperimen
 (Diisi mulai Sprint 1: konfigurasi, seed, AUROC, durasi latih.)
-
+## Ambang keputusan
+Ambang dipilih dari data validasi, misalnya persentil ke-95 dari reconstruction error data normal. AUROC sendiri tidak butuh ambang.
 ## Hambatan
 - Baseline dan run.py belum bisa dijalankan karena src/protokol/data.py dan MANIFEST.json masih diisi Penjaga Data & Evaluasi.
