@@ -1,0 +1,47 @@
+
+# Rencana eksperimen tim 14: Deteksi anomali suara mesin
+# Label: Desain: gangguan yang dibuat operator; normal = data bersama
+
+tim: 14
+judul: Deteksi anomali suara mesin
+pembimbing: Ardika Satria
+pilar: Suara
+seed: 1014
+ulangan: 5
+durasi_kondisi_detik: 6
+jeda_detik: 0.5
+
+rekam:
+  audio:
+    aktif: true
+    sample_rate: 16000
+  kamera:
+    aktif: false
+
+faktor:
+  gangguan:
+    jenis: isyarat
+    taraf:
+      - normal
+      - kertas menyentuh baling kipas
+      - benda logam jatuh di meja
+      - ujung selang pompa terangkat dari air
+    instruksi: 'Lakukan: {taraf}'
+  kipas:
+    - 120
+    - 220
+  pompa:
+    - 0
+    - 200
+
+metode:
+  jenis_tugas: Deteksi anomali
+  masukan_model: Log-mel 64 pita, 1 s
+  metrik_utama: AUROC
+  jalur:
+    - CNN
+    - TL
+    - Transformer
+    - AE
+  pembanding_non_dl: Isolation Forest pada MFCC
+  catatan_metode: AE jalur utama (latih hanya data normal)
