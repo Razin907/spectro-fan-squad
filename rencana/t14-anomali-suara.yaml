@@ -1,4 +1,3 @@
-
 # Rencana eksperimen tim 14: Deteksi anomali suara mesin
 # Label: Desain: gangguan yang dibuat operator; normal = data bersama
 
@@ -18,6 +17,11 @@ rekam:
   kamera:
     aktif: false
 
+harian:
+  mulai: 2026-11-11
+  jumlah_hari: 4
+  file_per_hari: 6
+
 faktor:
   gangguan:
     jenis: isyarat
@@ -33,6 +37,25 @@ faktor:
   pompa:
     - 0
     - 200
+
+bahan:
+  - Karton tipis sekitar 2 x 10 cm
+  - Sendok logam
+  - Penggaris 30 cm
+  - Spidol atau penanda
+  - Lakban kertas
+  - Gunting atau cutter
+  - Kipas sesuai slot
+  - Pompa dan wadah air
+  - Laptop dengan perekam audio 16 kHz
+  - Timer
+  - Kabel listrik panjang (opsional)
+
+persiapan:
+  - Memotong karton tipis sekitar 2 x 10 cm.
+  - Menandai titik jatuh sendok logam.
+  - Menandai ketinggian 10 cm dari titik jatuh dengan penggaris.
+  - Memastikan kipas dan pompa menyala sesuai kondisi sebelum merekam.
 
 metode:
   jenis_tugas: Deteksi anomali
