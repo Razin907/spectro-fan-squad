@@ -1,0 +1,11 @@
+{
+  "model": "trf",
+  "seed": 1,
+  "metrik": {
+    "val_auroc": 0.36124
+  },
+  "n_val": 252,
+  "n_pos_val": 108,
+  "n_neg_val": 144,
+  "sumber_skor": "pred_val_skor.npy"
+}
