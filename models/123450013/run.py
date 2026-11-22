@@ -1,5 +1,9 @@
 """Jalur AE (Autoencoder): dilatih hanya pada data normal; skor anomali = reconstruction error.
 
+Masukan: log-mel 64 pita, 1 s ([N, 100, 64]) dari src.protokol.data.muat(), diratakan jadi 6.400 fitur.
+Arsitektur: MLP simetris 6400 -> 256 -> 16 -> 256 -> 6400 (ReLU), bottleneck 16.
+Ambang keputusan: persentil ke-95 skor reconstruction error data latih normal.
+
     python models/123450013/run.py --seed 1 [--final]
 """
 from __future__ import annotations
@@ -26,7 +30,7 @@ def _skor(model, X):
     import torch
     model.eval()
     with torch.no_grad():
-        return ((model(X) - X) ** 2).mean(1).numpy()    # reconstruction error per jendela
+        return ((model(X) - X) ** 2).mean(1).numpy()    # reconstruction error (MSE) per jendela
 
 
 def latih_dan_prediksi(seed: int, final: bool):
@@ -42,14 +46,14 @@ def latih_dan_prediksi(seed: int, final: bool):
         return torch.tensor(np.asarray(X, dtype=np.float32)).reshape(len(X), -1)
 
     Xtr_t, Xva_t = ke_tensor(Xtr), ke_tensor(Xva)
-    # Latih hanya pada data normal (protokol: data latih sudah normal; difilter lagi demi aman)
+    # Latih hanya pada data normal (data latih protokol sudah normal; difilter lagi demi aman)
     normal = torch.tensor(np.asarray(ytr) == 0)
     Xn = Xtr_t[normal]
 
     d = Xn.shape[1]
     model = nn.Sequential(
-        nn.Linear(d, 256), nn.ReLU(), nn.Linear(256, BOTTLENECK),      # encoder
-        nn.ReLU(), nn.Linear(BOTTLENECK, 256), nn.ReLU(), nn.Linear(256, d),  # decoder
+        nn.Linear(d, 256), nn.ReLU(), nn.Linear(256, BOTTLENECK),               # encoder
+        nn.ReLU(), nn.Linear(BOTTLENECK, 256), nn.ReLU(), nn.Linear(256, d),    # decoder
     )
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     for _ in range(EPOCH):
@@ -62,7 +66,7 @@ def latih_dan_prediksi(seed: int, final: bool):
 
     s_tr = _skor(model, Xn)
     s_va = _skor(model, Xva_t)
-    ambang = float(np.percentile(s_tr, 95))      # ambang dari data latih, bukan data uji
+    ambang = float(np.percentile(s_tr, 95))      # ambang dari data latih normal, bukan data uji
     pred_val = (s_va > ambang).astype(np.int64)  # 0 normal, 1 anomali
     pred_test = s_te = None
     if final and Xte is not None:
