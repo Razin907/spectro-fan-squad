@@ -1,6 +1,16 @@
-"""Jalur CNN: jaringan konvolusi 2D pada log-mel (64 pita, 1 detik).
+"""Jalur CNN 2D (`cnn`): jaringan konvolusi 2D pada log-mel (64 pita, 1 detik).
+
+Masukan  : spektrogram log-mel dari src.protokol.data.muat(), ditata menjadi
+           tensor [N, 1, 64, 100] = [N, kanal, pita, waktu].
+Arsitektur: 3 blok (1 -> 16 -> 32 -> 64 kanal), tiap blok =
+           Conv2d(k=3, padding=1) + BatchNorm2d + ReLU + MaxPool2d(2);
+           lalu AdaptiveAvgPool2d(1) -> Flatten -> Dropout(0.3) -> Linear(64, n_keluaran).
+Latihan  : Adam (lr=1e-3), 15 epoch, batch 64, cross-entropy berbobot kelas otomatis.
+Skor     : skor anomali kontinu untuk AUROC = 1 - P(kelas normal).
 
     python models/123450027/run.py --seed 1 [--final]
+
+Rincian alasan optimizer, regularisasi, hyperparameter, dan ablation: catatan.md.
 """
 from __future__ import annotations
 
@@ -71,6 +81,7 @@ def latih_dan_prediksi(a):
         n_keluaran = max(2, int(max(ytr.max(initial=0), yva.max(initial=0))) + 1)
         ytr_t = torch.from_numpy(ytr)
         jumlah = np.bincount(ytr, minlength=n_keluaran).astype(np.float32)
+        # pembobotan kelas otomatis untuk cross-entropy (batas atas 20)
         bobot = torch.tensor(np.clip(jumlah.sum() / (len(jumlah) * np.maximum(jumlah, 1.0)), 0.0, 20.0))
     print(f"[info] tugas={tugas}  X_latih={tuple(Xtr.shape)}  X_val={tuple(Xva.shape)}  "
           f"keluaran={n_keluaran}", flush=True)
@@ -78,14 +89,15 @@ def latih_dan_prediksi(a):
         print(f"[info] jumlah per kelas (latih)={np.bincount(ytr).tolist()}", flush=True)
 
     def blok(i, o):
+        # Conv2d(k=3, padding=1) + BatchNorm2d + ReLU + MaxPool2d(2)
         return nn.Sequential(nn.Conv2d(i, o, 3, padding=1), nn.BatchNorm2d(o), nn.ReLU(), nn.MaxPool2d(2))
 
     model = nn.Sequential(
-        blok(1, 16), blok(16, 32), blok(32, 64),
-        nn.AdaptiveAvgPool2d(1), nn.Flatten(),
-        nn.Dropout(0.3), nn.Linear(64, n_keluaran),
+        blok(1, 16), blok(16, 32), blok(32, 64),           # 3 blok konvolusi: 1 -> 16 -> 32 -> 64 kanal
+        nn.AdaptiveAvgPool2d(1), nn.Flatten(),             # global average pooling
+        nn.Dropout(0.3), nn.Linear(64, n_keluaran),        # regularisasi dropout + kepala linear
     )
-    opt = torch.optim.Adam(model.parameters(), lr=a.lr)    # tulis alasan pilihan optimizer di catatan.md
+    opt = torch.optim.Adam(model.parameters(), lr=a.lr)    # alasan memilih Adam: lihat catatan.md
 
     for ep in range(1, a.epoch + 1):
         model.train()
