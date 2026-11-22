@@ -9,4 +9,5 @@ sesi/**/audio/**/*.wav
 __pycache__/
 .ipynb_checkpoints/
 .venv/
+!data/CATATAN-SESI.md
 # prediksi boleh di-commit (kecil); checkpoint model tidak
