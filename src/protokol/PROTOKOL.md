@@ -1,42 +1,34 @@
 # Protokol evaluasi tim 14 - Deteksi anomali suara mesin
 
-Protokol ini dibekukan setelah disetujui pembimbing. Data simulasi dipakai untuk
-menguji pemotong dan jalur evaluasi sebelum data meja tersedia pada 11 November 2026.
+Protokol ini memakai data primer rekaman meja uji nyata tim 14 (`sesi-20261117-181631`, folder `data/sesi_primer/`).
 
 | Butir | Isi |
-|---|---|
+| --- | --- |
 | Kasus | Deteksi anomali suara mesin (kipas dan pompa) |
-| Sumber dataset | `sesi/t14-anomali-suara_simulasi/audio/` (SINTETIS, pengganti sementara) |
+| Sumber dataset | `data/sesi_primer/` (rekaman meja nyata `sesi-20261117-181631`, `simulasi=false`, 2026-11-17 18:16:31; lihat `data/MANIFEST.json` & `data/CATATAN-SESI.md`) |
 | Jenis tugas | klasifikasi biner: `0` normal, `1` anomali |
-| Target / label | `0` = bunyi normal, `1` = salah satu gangguan (kertas, logam, atau pompa) |
-| Ukuran data latih / validasi / uji | 162 / 252 / 198 jendela; 4 / 3 / 2 sesi; 104 berkas WAV (80 slot + 24 harian) |
-| Cara split | per `sesi_id`, bukan per berkas: latih `slot-01`..`slot-03` + `harian-2026-11-11`; validasi `slot-04` + `harian-2026-11-12`..`13`; uji `slot-05` + `harian-2026-11-14` |
-| Pemeriksaan kebocoran | `python -m src.protokol.data` memastikan irisan sesi latih/val/uji kosong |
+| Target / label | `0` = bunyi `normal`, `1` = salah satu gangguan (`kertas menyentuh baling kipas`, `benda logam jatuh di meja`, atau `ujung selang pompa terangkat dari air`) |
+| Ukuran data latih / validasi / uji | 90 / 144 / 135 jendela; 3 / 1 / 1 ulangan; 72 kondisi valid dari 76 terekam (`no` 12, 13, 21, 22 dikeluarkan karena putus Wi-Fi ESP32) |
+| Cara split | per `ulangan` (blok replikasi penuh), bukan per jendela: latih `ulangan-1`..`ulangan-3` (hanya normal, 10 kondisi = 90 jendela); validasi `ulangan-4` (4 normal + 12 anomali = 144 jendela); uji `ulangan-5` (3 normal + 12 anomali = 135 jendela) |
+| Pemeriksaan kebocoran | `python -m src.protokol.data` memastikan irisan nomor kondisi latih/val/uji kosong |
 | Metrik utama untuk komparasi | AUROC biner pada validasi dan uji |
-| Praproses yang sama untuk semua model | WAV 16 kHz mono; buang 1 detik pertama; jendela 1 detik dengan hop 0,5 detik; log-mel 64 pita, 100 bingkai; normalisasi memakai rata-rata dan simpangan baku data latih saja |
+| Pembanding non-DL tim | Isolation Forest pada MFCC (`tools/pembanding_iforest.py`, `results/pembanding_non_dl/`) |
+| Praproses yang sama untuk semua model | WAV 48 kHz mono diturunkan ke 16 kHz dengan filter FIR anti-aliasing (rasio 3:1); buang 1 detik pertama setiap kondisi (tersisa 5 detik); jendela 1 detik dengan hop 0,5 detik (9 jendela/kondisi); log-mel 64 pita, 100 bingkai; normalisasi memakai rata-rata dan simpangan baku data latih saja |
 | Anggaran komputasi per run | <= 20 menit CPU laptop |
 | Evaluasi data uji | sekali, oleh Penjaga Data, pada sprint terakhir (`--final`) |
-| `data_hash` saat dibekukan | `922eddb536c7f5bcd3433be03c7ddbb1` (dari `results/baseline/metrics.json`) |
+| `data_hash` data primer | `c4949d6dc75b47c6c569dcdfc5812f3f` (dari `data/MANIFEST.json` + `split:2026`) |
 
 ## Catatan split
 
-`split.indeks` dari starter tidak dipakai karena unit pemisahan wajib sesi/blok. Split acak
-per jendela akan membuat potongan dari sesi yang sama muncul di latih dan uji. Pemeriksaan
-irisan sesi dijalankan oleh `python -m src.protokol.data`.
+`split.indeks` dari starter tidak dipakai karena unit pemisahan wajib blok replikasi (`ulangan`). Split acak per jendela akan membuat potongan dari kondisi yang sama muncul di latih dan uji. Pemeriksaan irisan kondisi dijalankan oleh `python -m src.protokol.data`.
 
 ## Catatan metrik
 
-`src/common/evaluate.py` adalah milik starter dan tidak diubah. Penilai itu menulis
-akurasi dan macro-F1. AUROC dihitung terpisah oleh `tools/nilai_auroc.py` dari
-`results/<nim>/pred_val_skor.npy` dan ditulis ke `results/<nim>/auroc.json`.
+`src/common/evaluate.py` adalah milik starter dan tidak diubah. Penilai itu menulis akurasi dan macro-F1 ke `results/<nim>/metrics.json` beserta `data_hash`. AUROC biner dihitung terpisah oleh `tools/nilai_auroc.py` dari `results/<nim>/pred_val_skor.npy` dan ditulis ke `results/<nim>/auroc.json`.
 
-## Catatan data simulasi
+## Catatan data primer meja
 
-- Data simulasi hanya untuk menguji pemotong, split per sesi, normalisasi, dan jalur
-  evaluasi. Angka AUROC dari data ini bukan hasil ilmiah final.
-- Data latih hanya berisi potongan normal dari slot dan rekaman harian.
-- Data validasi dan uji memuat normal dan anomali.
-- Saat data meja tiba, ganti isi `audio/` dan `audio/index.csv`, lalu perbarui
-  `data/MANIFEST.json`; kode protokol dan model tidak berubah.
-
-Disetujui pembimbing pada: `[ ]` (tautan pull request: `[ ]`)
+- Sesi `sesi-20261117-181631` merupakan lanjutan dari sesi 186 mulai kondisi `no=5` sampai `no=80` (kondisi 1–4 dilewati, total 76 kondisi terekam).
+- Empat kondisi (`no=12, 13, 21, 22`) dikeluarkan karena sambungan Wi-Fi ESP32 terputus dan mematikan/mengacaukan aktuator (terverifikasi pada `log.txt`, `aktuator.csv`, dan `daya.csv`; rincian lengkap ada di `data/CATATAN-SESI.md`).
+- Audio direkam pada laju asli mikrofon USB 48 kHz (`audio-0001.wav`..`audio-0009.wav`, masing-masing ~60 detik) lalu diselaraskan menggunakan stempel waktu `t_mulai_host` dan `t_selesai_host` di `label.csv` dan `audio_index.csv` sebelum diturunkan ke 16 kHz.
+- Setiap anggota mengekstrak arsip `sesi_primer.zip` ke `data/sesi_primer/` (diabaikan oleh `.gitignore`) agar memperoleh `data_hash = c4949d6dc75b47c6c569dcdfc5812f3f` yang identik.
