@@ -1,8 +1,10 @@
+
 """Transfer Learning: ResNet18 pretrained + One-Class SVM."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import time
@@ -26,25 +28,28 @@ def siapkan_input(X):
 
     X = np.asarray(X, dtype=np.float32)
 
-    if X.ndim != 3:
+    if X.ndim != 3 or X.shape[-1] != 64:
         raise ValueError(
-            f"Input harus berbentuk (N, waktu, 64), tetapi ditemukan {X.shape}"
+            f"Input harus berbentuk (N, waktu, 64), ditemukan {X.shape}"
         )
 
     X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
-    # Normalisasi setiap sampel ke rentang 0-1.
-    minimum = X.min(axis=(1, 2), keepdims=True)
-    maksimum = X.max(axis=(1, 2), keepdims=True)
-    X = (X - minimum) / np.maximum(maksimum - minimum, 1e-8)
+    # Rentang normalisasi ditentukan dari data training.
+    minimum = float(X.min())
+    maksimum = float(X.max())
+    X = (X - minimum) / max(maksimum - minimum, 1e-8)
 
     tensor = torch.tensor(X, dtype=torch.float32).unsqueeze(1)
     tensor = tensor.repeat(1, 3, 1, 1)
+
     tensor = F.interpolate(
-        tensor, size=(224, 224), mode="bilinear", align_corners=False
+        tensor,
+        size=(224, 224),
+        mode="bilinear",
+        align_corners=False
     )
 
-    # Normalisasi sesuai bobot pralatih ImageNet.
     mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
     std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
@@ -52,7 +57,7 @@ def siapkan_input(X):
 
 
 def buat_model():
-    """Memuat ResNet18 pralatih sebagai ekstraktor fitur."""
+    """Memuat ResNet18 pretrained sebagai ekstraktor fitur."""
     import torch
     from torchvision.models import resnet18, ResNet18_Weights
 
@@ -66,16 +71,36 @@ def buat_model():
     return model
 
 
-def ekstrak_fitur(model, X, batch_size=16):
-    """Mengambil fitur dari setiap sampel log-mel."""
+def ekstrak_fitur(model, X, minimum, maksimum, batch_size=16):
+    """Mengambil fitur ResNet18 dari setiap sampel log-mel."""
     import torch
+    import torch.nn.functional as F
 
-    X = siapkan_input(X)
+    X = np.asarray(X, dtype=np.float32)
+    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Normalisasi menggunakan statistik training yang sama.
+    X = (X - minimum) / max(maksimum - minimum, 1e-8)
+
+    tensor = torch.tensor(X, dtype=torch.float32).unsqueeze(1)
+    tensor = tensor.repeat(1, 3, 1, 1)
+
+    tensor = F.interpolate(
+        tensor,
+        size=(224, 224),
+        mode="bilinear",
+        align_corners=False
+    )
+
+    mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+    tensor = (tensor - mean) / std
+
     hasil = []
 
     with torch.no_grad():
-        for i in range(0, len(X), batch_size):
-            batch = X[i:i + batch_size]
+        for i in range(0, len(tensor), batch_size):
+            batch = tensor[i:i + batch_size]
             fitur = model(batch)
             hasil.append(fitur.cpu().numpy())
 
@@ -86,35 +111,43 @@ def latih_dan_prediksi(seed: int, final: bool):
     import torch
     from sklearn.preprocessing import StandardScaler
     from sklearn.svm import OneClassSVM
+    from sklearn.metrics import roc_auc_score
 
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    Xtr, ytr, Xva, _, Xte, _ = data.muat()
+    # Memuat data primer sesuai protokol resmi Tim 14.
+    Xtr, ytr, Xva, yva, Xte, yte = data.muat()
 
-    # Pastikan data training hanya berisi kelas normal.
-    kelas_train = np.unique(ytr)
-    if not np.all(kelas_train == 0):
-        raise ValueError(
-            f"Training seharusnya hanya berisi data normal (0), "
-            f"tetapi ditemukan kelas {kelas_train}"
-        )
+    print("Bentuk data:")
+    print("Train:", Xtr.shape, "Label:", np.unique(ytr, return_counts=True))
+    print("Validation:", Xva.shape, "Label:", np.unique(yva, return_counts=True))
+    print("Test:", Xte.shape, "Label:", np.unique(yte, return_counts=True))
 
-    print("Memuat ResNet18 pretrained...")
+    if not np.all(np.unique(ytr) == 0):
+        raise ValueError("Data training harus hanya berisi kelas normal (0).")
+
+    if len(np.unique(yva)) != 2:
+        raise ValueError("Data validation harus memiliki kelas normal dan anomali.")
+
+    # Statistik normalisasi dihitung dari training saja.
+    minimum = float(np.min(Xtr))
+    maksimum = float(np.max(Xtr))
+
+    print("\nMemuat ResNet18 pretrained...")
     model = buat_model()
 
-    print("Mengekstrak fitur data training...")
-    fitur_train = ekstrak_fitur(model, Xtr)
+    print("Mengekstrak fitur training...")
+    fitur_train = ekstrak_fitur(model, Xtr, minimum, maksimum)
 
-    print("Mengekstrak fitur data validasi...")
-    fitur_val = ekstrak_fitur(model, Xva)
+    print("Mengekstrak fitur validation...")
+    fitur_val = ekstrak_fitur(model, Xva, minimum, maksimum)
 
-    # Standardisasi fitur berdasarkan data training.
     scaler = StandardScaler()
     fitur_train = scaler.fit_transform(fitur_train)
     fitur_val = scaler.transform(fitur_val)
 
-    # One-Class SVM dilatih menggunakan data normal saja.
+    print("Melatih One-Class SVM...")
     detektor = OneClassSVM(
         kernel="rbf",
         gamma="scale",
@@ -122,25 +155,42 @@ def latih_dan_prediksi(seed: int, final: bool):
     )
     detektor.fit(fitur_train)
 
-    # One-Class SVM: +1 = normal, -1 = anomali.
-    # Prediksi kelas validasi
+    # Prediksi kelas: 0 = normal, 1 = anomali.
     pred_val = np.where(detektor.predict(fitur_val) == 1, 0, 1)
 
-    # Skor kontinu untuk AUROC
-    # Semakin tinggi skor, semakin kuat indikasi anomali
+    # Skor lebih tinggi menunjukkan indikasi anomali lebih kuat.
     skor_val = -detektor.decision_function(fitur_val)
     skor_val = skor_val.astype(np.float32)
 
+    if len(np.unique(yva)) == 2:
+        auroc_val = float(roc_auc_score(yva, skor_val))
+    else:
+        auroc_val = None
+
     pred_test = None
-    if final and Xte is not None:
-        print("Mengekstrak fitur data testing...")
-        fitur_test = ekstrak_fitur(model, Xte)
+    skor_test = None
+    auroc_test = None
+
+    if final:
+        print("Mengekstrak fitur testing...")
+        fitur_test = ekstrak_fitur(model, Xte, minimum, maksimum)
         fitur_test = scaler.transform(fitur_test)
+
         pred_test = np.where(detektor.predict(fitur_test) == 1, 0, 1)
+        skor_test = -detektor.decision_function(fitur_test)
+        skor_test = skor_test.astype(np.float32)
 
-    print("Prediksi validasi:", dict(zip(*np.unique(pred_val, return_counts=True))))
+        if len(np.unique(yte)) == 2:
+            auroc_test = float(roc_auc_score(yte, skor_test))
 
-    return pred_val, pred_test, skor_val
+    print("\nHasil prediksi validation:")
+    print(dict(zip(*np.unique(pred_val, return_counts=True))))
+    print("Validation AUROC:", auroc_val)
+
+    if auroc_test is not None:
+        print("Test AUROC:", auroc_test)
+
+    return pred_val, pred_test, skor_val, skor_test, auroc_val, auroc_test
 
 
 def main() -> None:
@@ -151,17 +201,28 @@ def main() -> None:
     a = ap.parse_args()
 
     t0 = time.time()
-    pred_val, pred_test, skor_val = latih_dan_prediksi(a.seed, a.final)
+
+    (
+        pred_val,
+        pred_test,
+        skor_val,
+        skor_test,
+        auroc_val,
+        auroc_test
+    ) = latih_dan_prediksi(a.seed, a.final)
+
     durasi = time.time() - t0
 
     out = AKAR / "results" / NIM
     out.mkdir(parents=True, exist_ok=True)
 
-    np.save(out / "pred_val.npy", np.asarray(pred_val))
-    np.save(out / "pred_val_skor.npy", np.asarray(skor_val))
+    np.save(out / "pred_val.npy", pred_val)
+    np.save(out / "pred_val_skor.npy", skor_val)
 
     perintah = [
-        sys.executable, "-m", "src.common.evaluate",
+        sys.executable,
+        "-m",
+        "src.common.evaluate",
         "--nim", NIM,
         "--model", JALUR,
         "--seed", str(a.seed),
@@ -171,10 +232,28 @@ def main() -> None:
     ]
 
     if pred_test is not None:
-        np.save(out / "pred_test.npy", np.asarray(pred_test))
+        np.save(out / "pred_test.npy", pred_test)
+        np.save(out / "pred_test_skor.npy", skor_test)
+
         perintah += ["--pred-test", str(out / "pred_test.npy")]
 
     subprocess.run(perintah, check=True, cwd=AKAR)
+
+    # Menyimpan AUROC secara terpisah karena evaluator starter
+    # hanya menghitung Accuracy dan Macro-F1.
+    hasil_auroc = {
+        "val_auroc": auroc_val,
+        "test_auroc": auroc_test,
+        "seed": a.seed
+    }
+
+    (out / "auroc.json").write_text(
+        json.dumps(hasil_auroc, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8"
+    )
+
+    print("\nDurasi:", round(durasi, 2), "detik")
+    print("Hasil AUROC disimpan di:", out / "auroc.json")
 
 
 if __name__ == "__main__":
