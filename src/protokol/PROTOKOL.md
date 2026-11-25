@@ -31,4 +31,4 @@ Protokol ini memakai data primer rekaman meja uji nyata tim 14 (`sesi-20261117-1
 - Sesi `sesi-20261117-181631` merupakan lanjutan dari sesi 186 mulai kondisi `no=5` sampai `no=80` (kondisi 1–4 dilewati, total 76 kondisi terekam).
 - Empat kondisi (`no=12, 13, 21, 22`) dikeluarkan karena sambungan Wi-Fi ESP32 terputus dan mematikan/mengacaukan aktuator (terverifikasi pada `log.txt`, `aktuator.csv`, dan `daya.csv`; rincian lengkap ada di `data/CATATAN-SESI.md`).
 - Audio direkam pada laju asli mikrofon USB 48 kHz (`audio-0001.wav`..`audio-0009.wav`, masing-masing ~60 detik) lalu diselaraskan menggunakan stempel waktu `t_mulai_host` dan `t_selesai_host` di `label.csv` dan `audio_index.csv` sebelum diturunkan ke 16 kHz.
-- Setiap anggota mengekstrak arsip `sesi_primer.zip` ke `data/sesi_primer/` (diabaikan oleh `.gitignore`) agar memperoleh `data_hash = c4949d6dc75b47c6c569dcdfc5812f3f` yang identik.
+- Setiap anggota mengesktrak zip yang berisi hasil download dan memasukkannya ke folder `data/sesi_primer/` (diabaikan oleh `.gitignore`) agar memperoleh `data_hash = c4949d6dc75b47c6c569dcdfc5812f3f` yang identik.
