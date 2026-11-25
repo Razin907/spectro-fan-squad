@@ -1,10 +1,12 @@
 """Jalur AE (Autoencoder): dilatih hanya pada data normal; skor anomali = reconstruction error.
 
 Masukan: log-mel 64 pita, 1 s ([N, 100, 64]) dari src.protokol.data.muat(), diratakan jadi 6.400 fitur.
-Arsitektur: MLP simetris 6400 -> 256 -> 16 -> 256 -> 6400 (ReLU), bottleneck 16.
+Arsitektur: MLP simetris 6400 -> 256 -> bottleneck -> 256 -> 6400 (ReLU). Default bottleneck 16.
 Ambang keputusan: persentil ke-95 skor reconstruction error data latih normal.
+Metrik utama AUROC dihitung dari skor kontinu (pred_val_skor.npy) oleh tools/nilai_auroc.py.
 
     python models/123450013/run.py --seed 1 [--final]
+    python models/123450013/run.py --seed 1 --bottleneck 8        # contoh ablation Sprint 2
 """
 from __future__ import annotations
 
@@ -22,8 +24,6 @@ from src.protokol import data  # noqa: E402  (protokol tim yang dibekukan)
 
 NIM = Path(__file__).resolve().parent.name     # nama folder = NIM
 JALUR = "ae"
-BOTTLENECK = 16
-EPOCH = 30
 
 
 def _skor(model, X):
@@ -33,7 +33,7 @@ def _skor(model, X):
         return ((model(X) - X) ** 2).mean(1).numpy()    # reconstruction error (MSE) per jendela
 
 
-def latih_dan_prediksi(seed: int, final: bool):
+def latih_dan_prediksi(seed: int, final: bool, bottleneck: int, epoch: int, lr: float, wd: float):
     """Kembalikan (pred_val, pred_test|None, skor_val, skor_test|None)."""
     import torch
     from torch import nn
@@ -52,11 +52,11 @@ def latih_dan_prediksi(seed: int, final: bool):
 
     d = Xn.shape[1]
     model = nn.Sequential(
-        nn.Linear(d, 256), nn.ReLU(), nn.Linear(256, BOTTLENECK),               # encoder
-        nn.ReLU(), nn.Linear(BOTTLENECK, 256), nn.ReLU(), nn.Linear(256, d),    # decoder
+        nn.Linear(d, 256), nn.ReLU(), nn.Linear(256, bottleneck),               # encoder
+        nn.ReLU(), nn.Linear(bottleneck, 256), nn.ReLU(), nn.Linear(256, d),    # decoder
     )
-    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
-    for _ in range(EPOCH):
+    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+    for _ in range(epoch):
         model.train()
         for idx in torch.randperm(len(Xn)).split(32):
             opt.zero_grad()
@@ -80,9 +80,14 @@ def main() -> None:
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--final", action="store_true", help="sprint terakhir: evaluasi data uji sekali")
     ap.add_argument("--perangkat", default="cpu laptop")
+    ap.add_argument("--bottleneck", type=int, default=16)
+    ap.add_argument("--epoch", type=int, default=30)
+    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--wd", type=float, default=0.0, help="weight decay Adam")
     a = ap.parse_args()
     t0 = time.time()
-    pred_val, pred_test, s_va, s_te = latih_dan_prediksi(a.seed, a.final)
+    pred_val, pred_test, s_va, s_te = latih_dan_prediksi(
+        a.seed, a.final, a.bottleneck, a.epoch, a.lr, a.wd)
     durasi = time.time() - t0
     out = AKAR / "results" / NIM
     out.mkdir(parents=True, exist_ok=True)
