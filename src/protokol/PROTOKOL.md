@@ -12,7 +12,7 @@ Protokol ini memakai data primer rekaman meja uji nyata tim 14 (`sesi-20261117-1
 | Cara split | per `ulangan` (blok replikasi penuh), bukan per jendela: latih `ulangan-1`..`ulangan-3` (hanya normal, 10 kondisi = 90 jendela); validasi `ulangan-4` (4 normal + 12 anomali = 144 jendela); uji `ulangan-5` (3 normal + 12 anomali = 135 jendela) |
 | Pemeriksaan kebocoran | `python -m src.protokol.data` memastikan irisan nomor kondisi latih/val/uji kosong |
 | Metrik utama untuk komparasi | AUROC biner pada validasi dan uji |
-| Pembanding non-DL tim | Isolation Forest pada MFCC (`tools/pembanding_iforest.py`, `results/pembanding_non_dl/`) |
+| Pembanding non-DL tim | Isolation Forest pada MFCC (`tools/pembanding_iforest.py`, `results/baseline/`) |
 | Praproses yang sama untuk semua model | WAV 48 kHz mono diturunkan ke 16 kHz dengan filter FIR anti-aliasing (rasio 3:1); buang 1 detik pertama setiap kondisi (tersisa 5 detik); jendela 1 detik dengan hop 0,5 detik (9 jendela/kondisi); log-mel 64 pita, 100 bingkai; normalisasi memakai rata-rata dan simpangan baku data latih saja |
 | Anggaran komputasi per run | <= 20 menit CPU laptop |
 | Evaluasi data uji | sekali, oleh Penjaga Data, pada sprint terakhir (`--final`) |
