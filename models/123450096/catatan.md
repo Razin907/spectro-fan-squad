@@ -1,72 +1,66 @@
-# Catatan Model: Transformer Encoder, jalur `trf`
+# Catatan Model: Masked Patch Reconstruction Transformer, jalur `trf`
 
 Penulis: Razin Hafid Hamdi (123450096)
-Status: protokol data simulasi selesai dan `run.py` sudah melewati `data.muat()` (menunggu rekaman meja nyata.)
+Status: **Sprint 1 selesai pada data primer meja nyata** (`data/sesi_primer/`, `sesi-20261117-181631`, seed 1); penyetelan hyperparameter, ablation, dan 3 seed dikerjakan di Sprint 2.
 
 ## Peran dan arsitektur
 
-Model menerima log-mel 64 pita sepanjang 1 detik. Sumbu waktu dipotong menjadi patch
-(10 bingkai per patch), tiap patch diproyeksikan dengan Conv1d ke dimensi 64, ditambah
-positional encoding, lalu diproses dua lapis Transformer encoder (4 head, feed-forward 128).
-Representasi dirata-ratakan dan diteruskan ke kepala keluaran: jumlah logit = jumlah kelas
-untuk klasifikasi, atau satu nilai untuk regresi. Bentuk masukan yang diterima `[N, waktu,
-pita]`, `[N, pita, waktu]`, dan `[N, 1, pita, waktu]`; bentuk keluaran mengikuti
-`src.protokol.data.TUGAS`.
+Model menerima spektrogram log-mel 64 pita sepanjang 1 detik (`[N, 100, 64]`) dari `src.protokol.data.muat()`. Karena data latih protokol tim hanya memuat bunyi normal (`label 0`), arsitektur `PatchTransformer` (`models/123450096/run.py`, **150.400 parameter**) dirancang untuk deteksi anomali *one-class* berbasis **Masked Patch Modeling (MPM)**:
 
-Protokol tim memisahkan data per sesi dan hanya memasukkan bunyi normal ke data latih.
-Transformer tetap memakai target biner 0/1, sehingga skor AUROC saat ini adalah uji jalur,
-bukan performa final. Jalur AE tetap acuan utama untuk deteksi anomali; hasil Transformer
-dibandingkan memakai split dan metrik yang sama.
+- Sumbu waktu dipotong menjadi `10` patch non-tumpang-tindih (`patch = 10` bingkai = 100 ms, dimensi `640`) dan diproyeksikan linear ke `d_model = 64`.
+- Saat pelatihan, `40%` patch (`4` dari `10` patch per sampel) diganti token `[MASK]` terlatih, ditambahkan *positional encoding* terlatih, diproses dua lapis `nn.TransformerEncoder` (4 head, `dim_ff = 128`, GELU, Pre-LN), lalu direkonstruksi kembali ke `[10, 64]` oleh kepala dekoder linear. Loss MSE dihitung hanya pada patch yang di-mask agar model wajib memanfaatkan *self-attention* lintas konteks waktu.
+- Saat evaluasi (deterministik), tiap patch dari 10 patch di-mask bergiliran (*leave-one-patch-out*) dan rata-rata galat rekonstruksi MSE per jendela dijadikan skor anomali kontinu (`results/123450096/pred_val_skor.npy`).
+- Ambang klasifikasi biner (`pred_val.npy`) diambil dari persentil ke-95 skor galat pada data latih normal saja (tanpa kebocoran data validasi/uji).
 
 ## Alasan optimizer
 
-AdamW dipilih karena attention Transformer peka terhadap skala gradien per parameter;
-AdamW memberi langkah adaptif tanpa mencampur weight decay ke dalam gradien. Weight decay
-dipisahkan (decoupled) sehingga regularisasi tetap terkontrol. Learning rate awal 1e-3
-dengan cosine annealing, gradient clipping 1.0, dan early stopping pada macro-F1 validasi
-(regresi: val loss). Alasan ini akan diuji ulang lewat pencarian hyperparameter setelah
-data asli tersedia.
+**AdamW** (`lr = 1e-3`, `weight_decay = 1e-2`) dipilih karena mekanisme *self-attention* Transformer peka terhadap perbedaan skala gradien antar lapisan proyeksi Q/K/V dan dekoder rekonstruksi. AdamW memisahkan *weight decay* dari gradien adaptif sehingga regularisasi tetap terkontrol. Pelatihan memakai jadwal *cosine annealing* (`eta_min = 5e-5`) selama 80 epoch pada data normal saja dan *gradient clipping* (`max_norm = 1.0`).
 
 ## Regularisasi
 
-- Dropout 0.1 pada encoder dan sebelum kepala keluaran.
-- Weight decay 1e-2 pada AdamW.
-- Label smoothing 0.05 untuk klasifikasi.
-- Class weighting otomatis untuk kelas tidak seimbang (bisa dimatikan untuk ablation).
-- Early stopping dengan patience 8 epoch dan pemulihan bobot validasi terbaik.
+- **Masked Patch Modeling (`mask_ratio = 0.40`)**: mencegah pemetaan identitas (*identity shortcut*) sehingga encoder hanya dapat merekonstruksi pola normal dari konteks patch sekitar.
+- **Dropout `0.1`** di dalam lapisan encoder dan sebelum dekoder linear.
+- **Weight decay `1e-2`** pada AdamW dan *gradient clipping* `1.0`.
+- **Pelatihan murni kelas normal** (tidak memakai data validasi untuk *early stopping* atau pemilihan ambang).
 
-## Pencarian hyperparameter (rencana, diisi setelah data asli ada)
+## Hasil Sprint 1 pada data primer meja (seed 1)
 
-| Percobaan | Patch | d_model | nlayer | Dropout | LR | val_macro_f1 (3 seed) |
+Data primer `data/sesi_primer/` (`data_hash = c4949d6dc75b47c6c569dcdfc5812f3f`, 72 kondisi valid setelah mengeluarkan `no=12, 13, 21, 22` akibat putus Wi-Fi ESP32; split `90` jendela latih normal / `144` validasi / `135` uji):
+
+| Model | Jalur | Seed | `val_auroc` *(utama)* | `val_acc` | `val_macro_f1` | Durasi (s) |
 | --- | --- | --- | --- | --- | --- | --- |
-| dasar | 10 | 64 | 2 | 0.1 | 1e-3 | — |
-| patch lebih panjang | 20 | 64 | 2 | 0.1 | 1e-3 | — |
-| model lebih lebar | 10 | 128 | 2 | 0.1 | 1e-3 | — |
-| lebih dangkal | 10 | 64 | 1 | 0.1 | 1e-3 | — |
+| Pembanding non-DL tim (`Isolation Forest pada MFCC`, `results/baseline/`) | `baseline` | 1 | **0.650720** | 0.298611 | 0.268962 | 8.3 |
+| **Transformer (`123450096`, `PatchTransformer` MPM)** | `trf` | 1 | **0.558899** | **0.333333** | **0.317401** | 272.6 |
 
-Semua percobaan memakai split per sesi protokol dan diulang 3 seed (1, 2, 3) pada
-konfigurasi akhir.
+### Rincian AUROC validasi per jenis gangguan (diagnosis awal)
 
-## Ablation (>= 2)
+| Gangguan (vs normal pada `ulangan-4`) | Transformer (`trf`) | Pembanding non-DL (`baseline`) |
+| --- | --- | --- |
+| `kertas menyentuh baling kipas` | **0.770833** | 0.766204 |
+| `benda logam jatuh di meja` | 0.482253 | **0.615741** |
+| `ujung selang pompa terangkat dari air` | 0.423611 | **0.570216** |
 
-1. `--tanpa-posisi`: menghapus positional encoding untuk menguji apakah urutan patch
-   benar-benar dipakai model.
-2. `--tanpa-bobot-kelas`: membandingkan class weighting dengan cross-entropy biasa.
-3. `--patch 20`: memperbesar patch untuk melihat trade-off jumlah token dan detail waktu.
-4. `--dropout 0.0`: menguji apakah regularisasi dropout membantu pada data tim.
+**Temuan awal untuk Sprint 2:**
+- Pada gangguan berkelanjutan yang kuat secara spektral (`kertas menyentuh baling kipas`), Transformer sudah sedikit melampaui pembanding non-DL (`0.770833` vs `0.766204`).
+- Pada `benda logam jatuh di meja`, benturan sendok hanya berlangsung < 0,3 detik sehingga rata-rata galat di seluruh 10 patch meredam sinyal impulsif; pada Sprint 2 perlu diuji agregasi skor berbasis `max` / `top-k` patch error dan ukuran patch lebih halus (`patch = 5`).
+- Pada `ujung selang pompa terangkat dari air`, separuh kondisi validasi berada pada `pompa = 0` (pompa mati) sehingga sinyal akustiknya sangat dekat dengan normal.
+
+## Pencarian hyperparameter (rencana Sprint 2)
+
+| Percobaan | Patch | `d_model` | `nlayer` | `mask_ratio` | Agregasi skor | `val_auroc` (3 seed) |
+| --- | --- | --- | --- | --- | --- | --- |
+| dasar (Sprint 1, seed 1) | 10 | 64 | 2 | 0.40 | mean patch MSE | 0.558899 (1 seed) |
+| patch lebih halus | 5 | 64 | 2 | 0.40 | mean / max patch MSE | — (Sprint 2) |
+| model lebih lebar | 10 | 128 | 2 | 0.40 | mean / max patch MSE | — (Sprint 2) |
+| rasio mask lebih rendah | 10 | 64 | 2 | 0.20 | mean / max patch MSE | — (Sprint 2) |
+
+## Ablation (>= 2, rencana Sprint 2)
+
+1. `--tanpa-posisi`: menghapus *positional encoding* untuk menguji apakah urutan waktu antar patch berkontribusi pada rekonstruksi.
+2. `--tanpa-mask`: melatih rekonstruksi tanpa masking untuk menguji apakah *Masked Patch Modeling* mencegah *identity mapping*.
+3. `--patch 5` vs `--patch 10` vs `--patch 20`: menguji resolusi patch terhadap anomali impulsif (sendok logam) vs berkelanjutan (kertas).
+4. `--dropout 0.0` vs `--dropout 0.1`: menguji pengaruh regularisasi dropout pada data latih 90 jendela normal.
 
 ## Hasil 3 seed konfigurasi akhir
 
-Belum ada; data asli belum tersedia. Angka akan ditulis dari `results/123450096/metrics.json`
-setelah pelatihan pada data tim.
-
-## Uji jalur pada data simulasi
-
-Perintah `python models/123450096/run.py --seed 1` memuat data langsung melalui
-`src.protokol.data.muat()` pada folder sesi simulasi (`sesi/t14-anomali-suara_simulasi/`).
-Data yang dipakai: 162 jendela latih (hanya normal), 252 jendela validasi (144 normal /
-108 anomali), dan 198 jendela uji (90 normal / 108 anomali). Bentuk masukan `[N, 100, 64]`.
-`metrics.json` ditulis lewat `src.common.evaluate`; AUROC validasi dihitung terpisah oleh
-`tools/nilai_auroc.py` dan ditulis ke `results/123450096/auroc.json` (0,529 pada uji jalur
-ini). Angka tersebut belum hasil ilmiah karena data masih berasal dari sesi simulasi dan
-model masih dilatih sebagai klasifikasi normal.
+Akan diisi pada Sprint 2 (seed 1, 2, 3) setelah penyetelan dan ablation selesai. Pada Sprint 1 (seed 1, data primer): `val_auroc = 0.558899`, `val_acc = 0.333333`, `val_macro_f1 = 0.317401`, `data_hash = c4949d6dc75b47c6c569dcdfc5812f3f`.
