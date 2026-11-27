@@ -10,6 +10,55 @@ datasetnya. Starter ini tidak memuat dataset apa pun; yang dibakukan adalah **ca
 mengevaluasi dan melaporkan**, sehingga lima model tim dibandingkan secara adil dan hasilnya
 dapat direproduksi.
 
+## Reproduksi Tim 14 (Spectro Fan Squad — Deteksi Anomali Suara Mesin)
+
+| Jalur | Pemilik / Skrip | Deskripsi |
+| --- | --- | --- |
+| `baseline` | `tools/pembanding_iforest.py` | Pembanding non-DL: Isolation Forest pada 13 MFCC + delta |
+| `ae` | `models/123450013/run.py` | Autoencoder (Azzahra Putri Kamilah, 123450013) |
+| `cnn` | `models/123450027/run.py` | CNN 2D pada log-mel (123450027) |
+| `trf` | `models/123450096/run.py` | Masked Patch Reconstruction Transformer (Razin Hafid Hamdi, 123450096) |
+| `tl` | `models/123450112/run.py` | Transfer Learning ResNet18 + One-Class SVM (123450112) |
+
+### Langkah reproduksi
+
+1. **Pasang dependensi:**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Siapkan data primer meja:**
+   Letakkan hasil ekstrak arsip sesi primer dari penyimpanan tim ke folder `data/sesi_primer/` (sesuai daftar 16 berkas di `data/MANIFEST.json` dan catatan mutu di `data/CATATAN-SESI.md`). Sidik data resmi tim: `data_hash = c4949d6dc75b47c6c569dcdfc5812f3f`.
+
+3. **Periksa split protokol (pastikan nol kebocoran kondisi):**
+
+   ```bash
+   python -m src.protokol.data
+   ```
+
+   Pemotong `src/protokol/data.py` menurunkan audio 48 kHz ke 16 kHz, membuang 1 detik pertama per kondisi, memotong jendela 1 detik (hop 0,5 s) menjadi log-mel `(100, 64)`, mengeluarkan 4 kondisi putus Wi-Fi ESP32 (`no` 12, 13, 21, 22), dan memisahkan per `ulangan` (`1..3` latih normal 90 jendela / `4` validasi 144 jendela / `5` uji 135 jendela).
+
+4. **Jalankan seluruh jalur & bangkitkan tabel komparasi:**
+
+   ```bash
+   python run_all.py --seeds 1            # Sprint 1 (1 seed)
+   python run_all.py --seeds 1 2 3        # Sprint 2 (3 seed konfigurasi akhir)
+   python run_all.py --seeds 1 2 3 --final # Sprint akhir (evaluasi data uji sekali)
+   ```
+
+   *(Di PowerShell Windows bila konsol bukan UTF-8, jalankan `$env:PYTHONIOENCODING="utf-8"` terlebih dahulu.)*
+
+5. **Atau jalankan jalur tertentu secara terpisah:**
+
+   ```bash
+   python tools/pembanding_iforest.py --seed 1
+   python models/<nim>/run.py --seed 1
+   python tools/nilai_auroc.py --nim <nim> --model <jalur> --seed 1
+   ```
+
+**Keluaran yang dihasilkan:** `results/<nim>/metrics.json`, `results/<nim>/auroc.json`, `results/baseline/metrics.json`, `results/baseline/auroc.json`, serta tabel komparasi di `reports/hasil_komparasi.md`.
+
 ## Struktur
 
 ```text
