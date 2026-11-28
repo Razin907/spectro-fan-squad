@@ -64,3 +64,31 @@ Data primer `data/sesi_primer/` (`data_hash = c4949d6dc75b47c6c569dcdfc5812f3f`,
 ## Hasil 3 seed konfigurasi akhir
 
 Akan diisi pada Sprint 2 (seed 1, 2, 3) setelah penyetelan dan ablation selesai. Pada Sprint 1 (seed 1, data primer): `val_auroc = 0.558899`, `val_acc = 0.333333`, `val_macro_f1 = 0.317401`, `data_hash = c4949d6dc75b47c6c569dcdfc5812f3f`.
+
+## Riwayat uji jalur simulasi & pemeriksaan bentuk masukan/keluaran (Tugas #15)
+
+Catatan ini merangkum keluaran run simulasi pada commit [`2ae6598`](https://github.com/Razin907/spectro-fan-squad/commit/2ae6598) (PR #8) beserta pemeriksaan bentuk tensor masukan/keluaran untuk memudahkan verifikasi kontrak `models/123450096/run.py`.
+
+### 1. Pemeriksaan bentuk masukan dan keluaran
+
+1. **Kerangka awal pada data simulasi (`2ae6598`, PR #8 — 108.866 parameter):**
+   - Keluaran `src.protokol.data.muat()`: `X_train (162, 100, 64)`, `X_val (252, 100, 64)`, `X_test (198, 100, 64)`.
+   - Alur tensor `PatchTransformer`: `[N, 100, 64]` $\rightarrow$ transpose `[N, 64, 100]` $\rightarrow$ `Conv1d(64, 64, kernel_size=10, stride=10)` menjadi `[N, 10, 64]` token patch $\rightarrow$ `TransformerEncoder` $\rightarrow$ `mean(dim=1)` `[N, 64]` $\rightarrow$ `head` logits `[N, 2]`.
+   - Berkas keluaran validasi: `results/123450096/pred_val.npy` berdimensi `(252,)` bertipe `int64` rentang `[0, 1]`, dan `results/123450096/pred_val_skor.npy` berdimensi `(252,)` bertipe `float32` rentang `[0.439707, 0.555540]`.
+2. **Pembaruan jalur *one-class* MPM pada data primer (`04b9fa2` / `main` — 150.400 parameter):**
+   - Keluaran `src.protokol.data.muat()`: `X_train (90, 100, 64)`, `X_val (144, 100, 64)`, `X_test (135, 100, 64)`.
+   - Alur tensor `PatchTransformer`: `[N, 100, 64]` $\rightarrow$ `patchify` `[N, 10, 640]` $\rightarrow$ `embed` + `[MASK]` + `pos` `[N, 10, 64]` $\rightarrow$ `TransformerEncoder` $\rightarrow$ `decoder` rekonstruksi `[N, 10, 640]`.
+   - Berkas keluaran validasi: `pred_val.npy` `(144,)` `int64` dan `pred_val_skor.npy` `(144,)` `float32`.
+
+### 2. Keluaran run simulasi (`2ae6598`, `--seed 1`)
+
+Perintah uji:
+```bash
+python models/123450096/run.py --seed 1
+python tools/nilai_auroc.py --nim 123450096 --model trf --seed 1
+```
+
+Keluaran `results/123450096/metrics.json` dan `results/123450096/auroc.json` pada commit `2ae6598`:
+- `data_hash`: `922eddb536c7f5bcd3433be03c7ddbb1`
+- `model`: `"trf"`, `seed`: `1`, `n_val`: `252` (`108` anomali / `144` normal), `n_test`: `0`, `durasi_detik`: `26.4` (`cpu laptop`)
+- `val_acc`: `0.52381`, `val_macro_f1`: `0.522335`, `val_auroc`: `0.529128`
