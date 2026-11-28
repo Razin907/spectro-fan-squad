@@ -2,8 +2,7 @@
 
 Protokol yang dipakai:
 
-- folder sesi primer ``data/sesi_primer/`` (sesuai ``data/MANIFEST.json``;
-  bisa otomatis membaca ``data/tim14_sesi-20261117-181631.tar.gz`` bila belum diekstrak);
+- folder sesi primer ``data/sesi_primer/`` (sesuai ``data/MANIFEST.json``);
 - kondisi dengan gangguan perangkat keras ESP32 Wi-Fi putus (``no`` 12, 13, 21, 22)
   dikeluarkan sesuai ``data/CATATAN-SESI.md`` (tersisa 72 dari 76 kondisi terekam);
 - audio WAV mono 16-bit (48 kHz pada perekam meja) diselaraskan ke ``label.csv`` melalui
@@ -24,10 +23,7 @@ Kontrak mengikuti starter:
 from __future__ import annotations
 
 import csv
-import io
-import tarfile
 import wave
-from pathlib import Path
 
 import numpy as np
 
@@ -36,10 +32,9 @@ from src.common import manifest
 TUGAS = "klasifikasi"
 
 FOLDER_SESI = manifest.AKAR / "data" / "sesi_primer"
-ARSIP_SESI = manifest.AKAR / "data" / "tim14_sesi-20261117-181631.tar.gz"
 
 # Kondisi dikeluarkan karena putus sambungan Wi-Fi ESP32 / aktuator mati
-# (terverifikasi di log.txt, aktuator.csv, dan daya.csv; lihat data/CATATAN-SESI.md).
+# (terverifikasi di log.txt, aktuator.csv, dan daya.csv; dan lihat data/CATATAN-SESI.md).
 KONDISI_DIKELUARKAN = frozenset({12, 13, 21, 22})
 
 SR = 16000
@@ -151,61 +146,39 @@ def _saring_kondisi_valid(labels: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def _baca_label_saja() -> list[dict[str, str]]:
-    if (FOLDER_SESI / "label.csv").exists():
-        with (FOLDER_SESI / "label.csv").open(encoding="utf-8", newline="") as f:
-            return _saring_kondisi_valid(list(csv.DictReader(f)))
-    if ARSIP_SESI.exists():
-        with tarfile.open(ARSIP_SESI, "r:gz") as tf:
-            jalur_label = next(n for n in tf.getnames() if n.endswith("/label.csv") or n == "label.csv")
-            rows = list(csv.DictReader(io.StringIO(tf.extractfile(jalur_label).read().decode("utf-8"))))
-            return _saring_kondisi_valid(rows)
-    raise FileNotFoundError(
-        f"Data primer tidak ditemukan di {FOLDER_SESI} maupun {ARSIP_SESI}. "
-        "Ekstrak arsip sesi_primer.zip ke data/sesi_primer/ (lihat data/MANIFEST.json)."
-    )
+    jalur_label = FOLDER_SESI / "label.csv"
+    if not jalur_label.exists():
+        raise FileNotFoundError(
+            f"Data primer tidak ditemukan di {FOLDER_SESI}. "
+            "Pastikan folder sesi primer sudah diekstrak (lihat data/MANIFEST.json)."
+        )
+    with jalur_label.open(encoding="utf-8", newline="") as f:
+        return _saring_kondisi_valid(list(csv.DictReader(f)))
 
 
 def _baca_sesi_mentah() -> tuple[
     list[dict[str, str]],
     list[tuple[float, float, int, np.ndarray]],
 ]:
-    if (FOLDER_SESI / "label.csv").exists() and (FOLDER_SESI / "audio_index.csv").exists():
-        with (FOLDER_SESI / "label.csv").open(encoding="utf-8", newline="") as f:
-            labels = _saring_kondisi_valid(list(csv.DictReader(f)))
-        with (FOLDER_SESI / "audio_index.csv").open(encoding="utf-8", newline="") as f:
-            audio_idx = list(csv.DictReader(f))
-        potongan: list[tuple[float, float, int, np.ndarray]] = []
-        for row in audio_idx:
-            jalur_wav = FOLDER_SESI / "audio" / row["berkas"]
-            with wave.open(str(jalur_wav), "rb") as wf:
-                x, sr = _baca_wav_obj(wf, str(jalur_wav))
-            t0 = float(row["t_mulai_host"])
-            potongan.append((t0, t0 + len(x) / sr, sr, x))
-        return labels, potongan
-
-    if ARSIP_SESI.exists():
-        with tarfile.open(ARSIP_SESI, "r:gz") as tf:
-            nama_berkas = tf.getnames()
-            jalur_label = next(n for n in nama_berkas if n.endswith("/label.csv") or n == "label.csv")
-            jalur_idx = next(n for n in nama_berkas if n.endswith("/audio_index.csv") or n == "audio_index.csv")
-            prefix = jalur_label[: -len("label.csv")]
-            labels = _saring_kondisi_valid(
-                list(csv.DictReader(io.StringIO(tf.extractfile(jalur_label).read().decode("utf-8"))))
-            )
-            audio_idx = list(csv.DictReader(io.StringIO(tf.extractfile(jalur_idx).read().decode("utf-8"))))
-            potongan = []
-            for row in audio_idx:
-                nama_wav = f"{prefix}audio/{row['berkas']}"
-                raw = tf.extractfile(nama_wav).read()
-                with wave.open(io.BytesIO(raw), "rb") as wf:
-                    x, sr = _baca_wav_obj(wf, nama_wav)
-                t0 = float(row["t_mulai_host"])
-                potongan.append((t0, t0 + len(x) / sr, sr, x))
-        return labels, potongan
-
-    raise FileNotFoundError(
-        f"Data primer tidak ditemukan di {FOLDER_SESI} maupun {ARSIP_SESI}."
-    )
+    jalur_label = FOLDER_SESI / "label.csv"
+    jalur_idx = FOLDER_SESI / "audio_index.csv"
+    if not jalur_label.exists() or not jalur_idx.exists():
+        raise FileNotFoundError(
+            f"Data primer tidak ditemukan di {FOLDER_SESI}. "
+            "Pastikan folder sesi primer sudah diekstrak (lihat data/MANIFEST.json)."
+        )
+    with jalur_label.open(encoding="utf-8", newline="") as f:
+        labels = _saring_kondisi_valid(list(csv.DictReader(f)))
+    with jalur_idx.open(encoding="utf-8", newline="") as f:
+        audio_idx = list(csv.DictReader(f))
+    potongan: list[tuple[float, float, int, np.ndarray]] = []
+    for row in audio_idx:
+        jalur_wav = FOLDER_SESI / "audio" / row["berkas"]
+        with wave.open(str(jalur_wav), "rb") as wf:
+            x, sr = _baca_wav_obj(wf, str(jalur_wav))
+        t0 = float(row["t_mulai_host"])
+        potongan.append((t0, t0 + len(x) / sr, sr, x))
+    return labels, potongan
 
 
 def _potong_kondisi(
@@ -361,6 +334,7 @@ if __name__ == "__main__":
     print(f"latih : {len(info['latih'])} ulangan -> {info['latih']}")
     print(f"val   : {len(info['val'])} ulangan -> {info['val']}")
     print(f"uji   : {len(info['uji'])} ulangan -> {info['uji']}")
+    print()
     print(f"irisan kondisi latih-val: {info['irisan_latih_val'] or 'kosong'}")
     print(f"irisan kondisi latih-uji: {info['irisan_latih_uji'] or 'kosong'}")
     print(f"irisan kondisi val-uji  : {info['irisan_val_uji'] or 'kosong'}")
