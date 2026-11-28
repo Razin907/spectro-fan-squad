@@ -13,7 +13,6 @@
 ## Isi folder
 
 - `kondisi.csv` - daftar 80 kondisi untuk dijalankan.
-- `sesi.json` - ringkasan dan metadata sesi.
 - `dryrun.md` - urutan latihan tanpa merekam.
 - `audio/index.csv` - daftar berkas WAV dan labelnya.
 - `audio/slot/` - rekaman sintetis per kondisi slot.
@@ -27,10 +26,8 @@
 - [x] Bahan fisik disiapkan.
 - [x] Dryrun dilakukan.
 - [x] Folder sesi diterima Penjaga Data.
-- [ ] Rekaman audio sesi nyata dilakukan.
+- [x] Rekaman audio sesi nyata dilakukan (pada `2026-11-17`; lihat `data/CATATAN-SESI.md`).
 
 ## Catatan untuk Penjaga Data
 
-Folder ini berisi kondisi dan audio sintetis, bukan rekaman meja nyata. Setelah bahan siap
-dan dryrun selesai, sesi nyata memakai urutan `kondisi.csv` yang sama. Setiap
-rekaman mengikuti `durasi_detik`, lalu jeda `jeda_detik` sebelum kondisi berikutnya.
+Folder ini merupakan arsip sesi simulasi beserta catatan urutan `kondisi.csv` dan latihan *dryrun* (`dryrun.md`). Perekaman audio sesi nyata telah dilakukan pada `2026-11-17` dan ditempatkan di `data/sesi_primer/` (lihat `data/MANIFEST.json` dan `data/CATATAN-SESI.md`).
